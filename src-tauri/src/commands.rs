@@ -1,0 +1,558 @@
+use std::sync::Arc;
+use serde::{Serialize, Deserialize};
+use sqlx::Row;
+use tokio::sync::Mutex;
+use chrono::Local;
+use crate::tracker::TrackerState;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AppUsage {
+    pub display_name: String,
+    pub executable_name: String,
+    pub category: String,
+    pub total_seconds: i64,
+    pub productivity_score: i32,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CategorySummary {
+    pub category: String,
+    pub total_seconds: i64,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct TimelineSegment {
+    pub hour: i32,
+    pub total_seconds: i64,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HeatmapDataPoint {
+    pub date: String,
+    pub count: i64, // total seconds tracked
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct FocusSessionInfo {
+    pub id: i64,
+    pub start_time: String,
+    pub end_time: Option<String>,
+    pub target_duration_seconds: i64,
+    pub actual_duration_seconds: Option<i64>,
+    pub completed: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GoalInfo {
+    pub id: i64,
+    pub app_id: Option<i64>,
+    pub executable_name: Option<String>,
+    pub category: Option<String>,
+    pub duration_limit_seconds: i64,
+    pub period: String,
+    pub is_active: bool,
+    pub current_usage_seconds: i64,
+}
+
+// 1. Get Top Apps
+#[tauri::command]
+pub async fn get_top_apps(
+    state: tauri::State<'_, Arc<Mutex<TrackerState>>>,
+    date_str: String,
+    limit: i64,
+) -> Result<Vec<AppUsage>, String> {
+    let tracker = state.lock().await;
+    let pool = &tracker.db_pool;
+
+    let rows = sqlx::query(
+        "SELECT a.display_name, a.executable_name, a.category, SUM(act.duration_seconds) as total_seconds, a.productivity_score 
+         FROM apps a 
+         JOIN activities act ON a.id = act.app_id 
+         WHERE strftime('%Y-%m-%d', act.start_time) = ?
+         GROUP BY a.id 
+         ORDER BY total_seconds DESC 
+         LIMIT ?"
+    )
+    .bind(&date_str)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let usages = rows.into_iter().map(|r| AppUsage {
+        display_name: r.get("display_name"),
+        executable_name: r.get("executable_name"),
+        category: r.get("category"),
+        total_seconds: r.get("total_seconds"),
+        productivity_score: r.get("productivity_score"),
+    }).collect();
+
+    Ok(usages)
+}
+
+// 2. Get Category Distribution
+#[tauri::command]
+pub async fn get_category_distribution(
+    state: tauri::State<'_, Arc<Mutex<TrackerState>>>,
+    date_str: String,
+) -> Result<Vec<CategorySummary>, String> {
+    let tracker = state.lock().await;
+    let pool = &tracker.db_pool;
+
+    let rows = sqlx::query(
+        "SELECT a.category, SUM(act.duration_seconds) as total_seconds 
+         FROM apps a 
+         JOIN activities act ON a.id = act.app_id 
+         WHERE strftime('%Y-%m-%d', act.start_time) = ?
+         GROUP BY a.category 
+         ORDER BY total_seconds DESC"
+    )
+    .bind(&date_str)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let summaries = rows.into_iter().map(|r| CategorySummary {
+        category: r.get("category"),
+        total_seconds: r.get("total_seconds"),
+    }).collect();
+
+    Ok(summaries)
+}
+
+// 3. Get Hourly Timeline for charts
+#[tauri::command]
+pub async fn get_hourly_timeline(
+    state: tauri::State<'_, Arc<Mutex<TrackerState>>>,
+    date_str: String,
+) -> Result<Vec<TimelineSegment>, String> {
+    let tracker = state.lock().await;
+    let pool = &tracker.db_pool;
+
+    let rows = sqlx::query(
+        "SELECT CAST(strftime('%H', act.start_time) AS INTEGER) as hour, SUM(act.duration_seconds) as total_seconds 
+         FROM activities act 
+         WHERE strftime('%Y-%m-%d', act.start_time) = ? 
+         GROUP BY hour
+         ORDER BY hour"
+    )
+    .bind(&date_str)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Create a dense list for all 24 hours
+    let mut timeline = vec![0i64; 24];
+    for r in rows {
+        let hr: i32 = r.get("hour");
+        let secs: i64 = r.get("total_seconds");
+        if hr >= 0 && hr < 24 {
+            timeline[hr as usize] = secs;
+        }
+    }
+
+    let result = timeline.into_iter().enumerate().map(|(h, s)| TimelineSegment {
+        hour: h as i32,
+        total_seconds: s,
+    }).collect();
+
+    Ok(result)
+}
+
+// 4. Update an app's category and productivity rating
+#[tauri::command]
+pub async fn update_app_details(
+    state: tauri::State<'_, Arc<Mutex<TrackerState>>>,
+    executable_name: String,
+    category: String,
+    productivity_score: i32,
+) -> Result<(), String> {
+    let tracker = state.lock().await;
+    let pool = &tracker.db_pool;
+
+    sqlx::query(
+        "UPDATE apps 
+         SET category = ?, productivity_score = ? 
+         WHERE executable_name = ?"
+    )
+    .bind(category)
+    .bind(productivity_score)
+    .bind(executable_name)
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+// 5. Create a new screen time goal
+#[tauri::command]
+pub async fn create_goal(
+    state: tauri::State<'_, Arc<Mutex<TrackerState>>>,
+    app_id: Option<i64>,
+    category: Option<String>,
+    limit_seconds: i64,
+    period: String,
+) -> Result<(), String> {
+    let tracker = state.lock().await;
+    let pool = &tracker.db_pool;
+
+    sqlx::query(
+        "INSERT INTO goals (app_id, category, duration_limit_seconds, period) 
+         VALUES (?, ?, ?, ?)"
+    )
+    .bind(app_id)
+    .bind(category)
+    .bind(limit_seconds)
+    .bind(period)
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+// 6. Fetch goals alongside their live tracking progress
+#[tauri::command]
+pub async fn get_goals(
+    state: tauri::State<'_, Arc<Mutex<TrackerState>>>,
+    date_str: String,
+) -> Result<Vec<GoalInfo>, String> {
+    let tracker = state.lock().await;
+    let pool = &tracker.db_pool;
+
+    let rows = sqlx::query(
+        "SELECT g.id, g.app_id, a.executable_name, g.category, g.duration_limit_seconds, g.period, g.is_active 
+         FROM goals g
+         LEFT JOIN apps a ON g.app_id = a.id"
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut goals_list = Vec::new();
+
+    for r in rows {
+        let id: i64 = r.get("id");
+        let app_id: Option<i64> = r.get("app_id");
+        let executable_name: Option<String> = r.get("executable_name");
+        let category: Option<String> = r.get("category");
+        let duration_limit_seconds: i64 = r.get("duration_limit_seconds");
+        let period: String = r.get("period");
+        let is_active: i32 = r.get("is_active");
+
+        // Compute current usage for the goal period
+        let mut current_usage_seconds = 0i64;
+        if let Some(ref exe) = executable_name {
+            let usage_row = sqlx::query(
+                "SELECT SUM(act.duration_seconds) as total 
+                 FROM activities act 
+                 JOIN apps a ON act.app_id = a.id 
+                 WHERE a.executable_name = ? AND strftime('%Y-%m-%d', act.start_time) = ?"
+            )
+            .bind(exe)
+            .bind(&date_str)
+            .fetch_one(pool)
+            .await;
+
+            if let Ok(row) = usage_row {
+                current_usage_seconds = row.try_get::<i64, _>("total").unwrap_or(0);
+            }
+        } else if let Some(ref cat) = category {
+            let usage_row = sqlx::query(
+                "SELECT SUM(act.duration_seconds) as total 
+                 FROM activities act 
+                 JOIN apps a ON act.app_id = a.id 
+                 WHERE a.category = ? AND strftime('%Y-%m-%d', act.start_time) = ?"
+            )
+            .bind(cat)
+            .bind(&date_str)
+            .fetch_one(pool)
+            .await;
+
+            if let Ok(row) = usage_row {
+                current_usage_seconds = row.try_get::<i64, _>("total").unwrap_or(0);
+            }
+        }
+
+        goals_list.push(GoalInfo {
+            id,
+            app_id,
+            executable_name,
+            category,
+            duration_limit_seconds,
+            period,
+            is_active: is_active != 0,
+            current_usage_seconds,
+        });
+    }
+
+    Ok(goals_list)
+}
+
+// 7. Focus sessions management
+#[tauri::command]
+pub async fn start_focus_session(
+    state: tauri::State<'_, Arc<Mutex<TrackerState>>>,
+    target_seconds: i64,
+) -> Result<i64, String> {
+    let tracker = state.lock().await;
+    let pool = &tracker.db_pool;
+    let now = Local::now().to_rfc3339();
+
+    let result = sqlx::query(
+        "INSERT INTO focus_sessions (start_time, target_duration_seconds, completed) 
+         VALUES (?, ?, 0)"
+    )
+    .bind(&now)
+    .bind(target_seconds)
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(result.last_insert_rowid())
+}
+
+#[tauri::command]
+pub async fn end_focus_session(
+    state: tauri::State<'_, Arc<Mutex<TrackerState>>>,
+    session_id: i64,
+    actual_seconds: i64,
+    completed: bool,
+) -> Result<(), String> {
+    let tracker = state.lock().await;
+    let pool = &tracker.db_pool;
+    let now = Local::now().to_rfc3339();
+    let completed_flag = if completed { 1 } else { 0 };
+
+    sqlx::query(
+        "UPDATE focus_sessions 
+         SET end_time = ?, actual_duration_seconds = ?, completed = ? 
+         WHERE id = ?"
+    )
+    .bind(&now)
+    .bind(actual_seconds)
+    .bind(completed_flag)
+    .bind(session_id)
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_focus_sessions(
+    state: tauri::State<'_, Arc<Mutex<TrackerState>>>,
+) -> Result<Vec<FocusSessionInfo>, String> {
+    let tracker = state.lock().await;
+    let pool = &tracker.db_pool;
+
+    let rows = sqlx::query(
+        "SELECT id, start_time, end_time, target_duration_seconds, actual_duration_seconds, completed 
+         FROM focus_sessions 
+         ORDER BY id DESC"
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let sessions = rows.into_iter().map(|r| {
+        let completed_val: i32 = r.get("completed");
+        FocusSessionInfo {
+            id: r.get("id"),
+            start_time: r.get("start_time"),
+            end_time: r.get("end_time"),
+            target_duration_seconds: r.get("target_duration_seconds"),
+            actual_duration_seconds: r.get("actual_duration_seconds"),
+            completed: completed_val != 0,
+        }
+    }).collect();
+
+    Ok(sessions)
+}
+
+// 8. Fetch Heatmap Data (Yearly/Monthly usage for contribution grid)
+#[tauri::command]
+pub async fn get_heatmap_data(
+    state: tauri::State<'_, Arc<Mutex<TrackerState>>>,
+) -> Result<Vec<HeatmapDataPoint>, String> {
+    let tracker = state.lock().await;
+    let pool = &tracker.db_pool;
+
+    let rows = sqlx::query(
+        "SELECT strftime('%Y-%m-%d', act.start_time) as act_date, SUM(act.duration_seconds) as total 
+         FROM activities act 
+         GROUP BY act_date 
+         ORDER BY act_date ASC"
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let points = rows.into_iter().map(|r| HeatmapDataPoint {
+        date: r.get("act_date"),
+        count: r.get("total"),
+    }).collect();
+
+    Ok(points)
+}
+
+// ─── Cross-platform Autostart Management ───
+
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Cached background-mode state. Read on every close event to avoid
+/// spawning a subprocess (which causes a visible freeze).
+/// Initialized from the real autostart status on app startup,
+/// and updated whenever the user toggles the setting.
+pub static BACKGROUND_ENABLED: AtomicBool = AtomicBool::new(true);
+
+/// Debug builds use a separate registry key / plist / desktop file
+/// so that dev and production don't overwrite each other.
+#[cfg(debug_assertions)]
+const AUTOSTART_REG_NAME: &str = "AuraWellbeing-Dev";
+#[cfg(not(debug_assertions))]
+const AUTOSTART_REG_NAME: &str = "AuraWellbeing";
+
+fn get_exe_path() -> Option<String> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.to_str().map(|s| s.to_string()))
+}
+
+#[cfg(target_os = "windows")]
+pub fn autostart_is_enabled() -> bool {
+    use std::process::Command;
+    use std::os::windows::process::CommandExt;
+    let output = Command::new("reg")
+        .args(["query", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run", "/v", AUTOSTART_REG_NAME])
+        .creation_flags(0x08000000)
+        .output();
+    match output {
+        Ok(o) => o.status.success(),
+        Err(_) => false,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn autostart_set(enabled: bool) -> Result<(), String> {
+    use std::process::Command;
+    use std::os::windows::process::CommandExt;
+    if enabled {
+        let exe = get_exe_path().ok_or("Cannot resolve executable path")?;
+        let exe_with_flag = format!("\"{}\" --background", exe);
+        let status = Command::new("reg")
+            .args([
+                "add",
+                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                "/v", AUTOSTART_REG_NAME,
+                "/t", "REG_SZ",
+                "/d", &exe_with_flag,
+                "/f",
+            ])
+            .creation_flags(0x08000000)
+            .status()
+            .map_err(|e| e.to_string())?;
+        if status.success() { Ok(()) } else { Err("Failed to add registry entry".into()) }
+    } else {
+        let status = Command::new("reg")
+            .args([
+                "delete",
+                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                "/v", AUTOSTART_REG_NAME,
+                "/f",
+            ])
+            .creation_flags(0x08000000)
+            .status()
+            .map_err(|e| e.to_string())?;
+        if status.success() { Ok(()) } else { Err("Failed to remove registry entry".into()) }
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub fn autostart_is_enabled() -> bool {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let plist_path = format!("{}/Library/LaunchAgents/com.aura.wellbeing.plist", home);
+    std::path::Path::new(&plist_path).exists()
+}
+
+#[cfg(target_os = "macos")]
+fn autostart_set(enabled: bool) -> Result<(), String> {
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    let plist_path = format!("{}/Library/LaunchAgents/com.aura.wellbeing.plist", home);
+
+    if enabled {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let exe_str = exe.to_str().ok_or("Invalid exe path")?;
+        let plist_content = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.aura.wellbeing</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{}</string>
+        <string>--background</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>"#,
+            exe_str
+        );
+        std::fs::write(&plist_path, plist_content).map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        if std::path::Path::new(&plist_path).exists() {
+            std::fs::remove_file(&plist_path).map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub fn autostart_is_enabled() -> bool {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let desktop_path = format!("{}/.config/autostart/aura-wellbeing.desktop", home);
+    std::path::Path::new(&desktop_path).exists()
+}
+
+#[cfg(target_os = "linux")]
+fn autostart_set(enabled: bool) -> Result<(), String> {
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    let autostart_dir = format!("{}/.config/autostart", home);
+    let desktop_path = format!("{}/aura-wellbeing.desktop", autostart_dir);
+
+    if enabled {
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let exe_str = exe.to_str().ok_or("Invalid exe path")?;
+        std::fs::create_dir_all(&autostart_dir).map_err(|e| e.to_string())?;
+        let content = format!(
+            "[Desktop Entry]\nType=Application\nName=Aura Wellbeing\nExec={} --background\nX-GNOME-Autostart-enabled=true\n",
+            exe_str
+        );
+        std::fs::write(&desktop_path, content).map_err(|e| e.to_string())?;
+        Ok(())
+    } else {
+        if std::path::Path::new(&desktop_path).exists() {
+            std::fs::remove_file(&desktop_path).map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+}
+
+#[tauri::command]
+pub async fn get_autostart_enabled() -> Result<bool, String> {
+    Ok(BACKGROUND_ENABLED.load(Ordering::Relaxed))
+}
+
+#[tauri::command]
+pub async fn set_autostart_enabled(enabled: bool) -> Result<(), String> {
+    autostart_set(enabled)?;
+    BACKGROUND_ENABLED.store(enabled, Ordering::Relaxed);
+    Ok(())
+}
+

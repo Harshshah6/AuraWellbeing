@@ -1,0 +1,529 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+
+:root {
+  /* Apple Design Tokens — Light Mode */
+  --colors-primary: #0066cc;
+  --colors-primary-focus: #0071e3;
+  --colors-primary-on-dark: #2997ff;
+  --colors-canvas: #ffffff;
+  --colors-canvas-parchment: #f5f5f7;
+  --colors-surface-pearl: #fafafc;
+  --colors-surface-tile-1: #272729;
+  --colors-surface-tile-2: #2a2a2c;
+  --colors-surface-tile-3: #252527;
+  --colors-surface-black: #000000;
+
+  --colors-ink: #1d1d1f;
+  --colors-body-muted: #cccccc;
+  --colors-ink-muted-80: #333333;
+  --colors-ink-muted-48: #7a7a7a;
+
+  --colors-divider-soft: rgba(0, 0, 0, 0.04);
+  --colors-hairline: #e0e0e0;
+
+  --colors-success: #059669;
+  --colors-warning: #d97706;
+  --colors-danger: #e11d48;
+
+  /* Font Stacks */
+  --font-display: "Inter", "SF Pro Display", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-text: "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+
+  --transition-system: all 0.2s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* ─── Dark Mode Tokens ─── */
+[data-theme='dark'] {
+  --colors-primary: #2997ff;
+  --colors-primary-focus: #64b5f6;
+  --colors-canvas: #1c1c1e;
+  --colors-canvas-parchment: #141416;
+  --colors-surface-pearl: #2c2c2e;
+
+  --colors-ink: #f5f5f7;
+  --colors-ink-muted-80: #d1d1d6;
+  --colors-ink-muted-48: #8e8e93;
+
+  --colors-divider-soft: rgba(255, 255, 255, 0.06);
+  --colors-hairline: #38383a;
+
+  --colors-success: #30d158;
+  --colors-warning: #ffd60a;
+  --colors-danger: #ff453a;
+}
+
+/* Force Native Desktop UX & Reset */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-text);
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+input, select, textarea, .selectable-text {
+  user-select: text;
+}
+
+body {
+  background: var(--colors-canvas-parchment);
+  color: var(--colors-ink);
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+/* Scrollbar Recedes silently */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--colors-hairline);
+  border-radius: 99px;
+}
+
+/* App Container Layout */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+/* Sub-Navigation Pinned Frosted Bar (`sub-nav-frosted`) — Now top-level */
+.sub-nav-frosted {
+  height: 52px;
+  background: color-mix(in srgb, var(--colors-canvas) 80%, transparent);
+  border-bottom: 1px solid var(--colors-hairline);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 40px;
+  z-index: 90;
+  position: sticky;
+  top: 0;
+}
+
+.sub-nav-title {
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  color: var(--colors-ink);
+}
+
+.sub-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.sub-nav-tab {
+  font-size: 13px;
+  color: var(--colors-ink-muted-80);
+  cursor: pointer;
+  font-weight: 400;
+  letter-spacing: -0.2px;
+  padding: 6px 4px;
+  border-bottom: 2px solid transparent;
+  transition: var(--transition-system);
+}
+
+.sub-nav-tab:hover {
+  color: var(--colors-primary);
+}
+
+.sub-nav-tab.active {
+  color: var(--colors-primary);
+  font-weight: 600;
+}
+
+/* Main Scrollable Viewport */
+.main-viewport {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--colors-canvas-parchment);
+}
+
+/* Full-bleed alternating layout tiles */
+.viewport-tile {
+  width: 100%;
+  padding: 64px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.viewport-tile.light {
+  background: var(--colors-canvas);
+}
+
+.viewport-tile.parchment {
+  background: var(--colors-canvas-parchment);
+}
+
+.viewport-tile.dark {
+  background: var(--colors-surface-tile-1);
+  color: #ffffff;
+}
+
+/* Spacing Constants & Typography Cadence */
+.hero-display {
+  font-family: var(--font-display);
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--colors-ink);
+}
+
+.tile-dark .hero-display {
+  color: #ffffff;
+}
+
+.lead-subcopy {
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.47;
+  letter-spacing: -0.015em;
+  color: var(--colors-ink-muted-80);
+  max-width: 600px;
+}
+
+.tile-dark .lead-subcopy {
+  color: var(--colors-body-muted);
+}
+
+/* Re-engineered Store Card Grid (`store-utility-card`) */
+.store-grid-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 24px;
+  width: 100%;
+}
+
+.store-utility-card {
+  background: var(--colors-canvas);
+  border: 1px solid var(--colors-hairline);
+  border-radius: 18px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 16px;
+  transition: var(--transition-system);
+}
+
+.store-utility-card:hover {
+  border-color: var(--colors-ink-muted-48);
+  transform: translateY(-1px);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.card-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  color: var(--colors-ink);
+}
+
+.card-subtitle {
+  font-size: 13px;
+  color: var(--colors-ink-muted-48);
+}
+
+/* Universal Button Grammar */
+
+/* 1. Primary Capsule Pill Button (`button-primary`) */
+.button-primary {
+  background: var(--colors-primary);
+  color: #ffffff !important;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 20px;
+  border-radius: 9999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: var(--transition-system);
+}
+
+.button-primary:hover {
+  filter: brightness(1.1);
+}
+
+.button-primary:active {
+  transform: scale(0.95);
+}
+
+/* 2. Secondary/Ghost Pill CTA (`button-secondary-pill`) */
+.button-secondary-pill {
+  background: transparent;
+  color: var(--colors-primary);
+  border: 1px solid var(--colors-primary);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 20px;
+  border-radius: 9999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: var(--transition-system);
+}
+
+.button-secondary-pill:hover {
+  background: color-mix(in srgb, var(--colors-primary) 8%, transparent);
+}
+
+.button-secondary-pill:active {
+  transform: scale(0.95);
+}
+
+/* 3. Utility Button (`button-dark-utility`) */
+.button-dark-utility {
+  background: var(--colors-ink);
+  color: var(--colors-canvas);
+  border: none;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: var(--transition-system);
+}
+
+.button-dark-utility:hover {
+  opacity: 0.9;
+}
+
+.button-dark-utility:active {
+  transform: scale(0.95);
+}
+
+/* Segmented Toggle Control Capsule */
+.segmented-pill-container {
+  display: flex;
+  background: var(--colors-canvas-parchment);
+  border: 1px solid var(--colors-hairline);
+  padding: 3px;
+  border-radius: 9999px;
+  width: fit-content;
+}
+
+.segmented-pill-button {
+  background: transparent;
+  border: none;
+  color: var(--colors-ink-muted-80);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: var(--transition-system);
+}
+
+.segmented-pill-button.active {
+  background: var(--colors-canvas);
+  color: var(--colors-ink);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme='dark'] .segmented-pill-button.active {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* Sleek Apple-style Search Input */
+.search-pill-input {
+  background: var(--colors-canvas);
+  color: var(--colors-ink);
+  font-size: 15px;
+  border: 1px solid var(--colors-hairline);
+  border-radius: 9999px;
+  padding: 10px 20px;
+  outline: none;
+  width: 100%;
+  transition: var(--transition-system);
+}
+
+.search-pill-input:focus {
+  border-color: var(--colors-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--colors-primary) 15%, transparent);
+}
+
+/* ─── Heatmap Grid ─── */
+.heatmap-calendar-card {
+  width: 100%;
+  background: var(--colors-canvas);
+  border: 1px solid var(--colors-hairline);
+  border-radius: 18px;
+  padding: 28px;
+}
+
+.heatmap-grid {
+  display: grid;
+  grid-template-columns: repeat(24, 1fr);
+  gap: 3px;
+}
+
+.heatmap-cell {
+  aspect-ratio: 1;
+  border-radius: 3px;
+  min-width: 0;
+  transition: var(--transition-system);
+}
+
+.heatmap-cell:hover {
+  transform: scale(1.3);
+  z-index: 1;
+}
+
+/* Heatmap Level Colors — Light Mode */
+.heatmap-cell.level-0 { background: var(--colors-canvas-parchment); }
+.heatmap-cell.level-1 { background: color-mix(in srgb, var(--colors-primary) 15%, transparent); }
+.heatmap-cell.level-2 { background: color-mix(in srgb, var(--colors-primary) 35%, transparent); }
+.heatmap-cell.level-3 { background: color-mix(in srgb, var(--colors-primary) 65%, transparent); }
+.heatmap-cell.level-4 { background: var(--colors-primary); }
+
+/* Single surface drop shadow reserved exclusively for active imagery/dials */
+.product-focused-dial {
+  box-shadow: rgba(0, 0, 0, 0.22) 3px 5px 30px 0;
+  transition: var(--transition-system);
+}
+
+[data-theme='dark'] .product-focused-dial {
+  box-shadow: rgba(0, 0, 0, 0.5) 3px 5px 30px 0;
+}
+
+/* Unified system progress */
+.capsule-progress-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--colors-canvas-parchment);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.capsule-progress-fill {
+  height: 100%;
+  background: var(--colors-primary);
+  border-radius: 9999px;
+  transition: width 0.4s ease;
+}
+
+/* Table overrides */
+.store-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.store-table th {
+  padding: 12px 16px;
+  color: var(--colors-ink-muted-48);
+  font-weight: 600;
+  border-bottom: 1px solid var(--colors-hairline);
+  text-align: left;
+}
+
+.store-table td {
+  padding: 16px;
+  border-bottom: 1px solid var(--colors-divider-soft);
+}
+
+/* ─── Theme toggle switch ─── */
+.theme-toggle-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.theme-toggle-label {
+  font-size: 11px;
+  color: var(--colors-ink-muted-48);
+  font-weight: 600;
+  letter-spacing: -0.1px;
+}
+
+.theme-toggle-track {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  background: var(--colors-hairline);
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: var(--transition-system);
+}
+
+.theme-toggle-track.active {
+  background: var(--colors-primary);
+}
+
+.theme-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: var(--colors-canvas);
+  border-radius: 50%;
+  transition: var(--transition-system);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.theme-toggle-track.active .theme-toggle-thumb {
+  left: 18px;
+}
+
+/* ─── Recharts: remove click/focus stroke box ─── */
+.recharts-wrapper,
+.recharts-wrapper svg,
+.recharts-surface,
+.recharts-wrapper .recharts-area,
+.recharts-wrapper .recharts-pie {
+  outline: none !important;
+  cursor: default !important;
+}
+
+.recharts-wrapper svg:focus,
+.recharts-wrapper svg:active {
+  outline: none !important;
+}
+
+/* ─── Responsive ─── */
+@media (max-width: 833px) {
+  .viewport-tile {
+    padding: 48px 24px;
+  }
+  .sub-nav-frosted {
+    padding: 0 20px;
+  }
+  .sub-nav-actions {
+    gap: 12px;
+  }
+  .hero-display {
+    font-size: 28px;
+  }
+  .store-grid-container {
+    grid-template-columns: 1fr;
+  }
+  .heatmap-grid {
+    grid-template-columns: repeat(12, 1fr);
+  }
+}
