@@ -556,3 +556,48 @@ pub async fn set_autostart_enabled(enabled: bool) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub async fn export_data(content: String, filename: String) -> Result<String, String> {
+    let file_path = rfd::FileDialog::new()
+        .set_file_name(&filename)
+        .save_file();
+    
+    if let Some(path) = file_path {
+        std::fs::write(&path, content).map_err(|e| e.to_string())?;
+        Ok(path.to_string_lossy().to_string())
+    } else {
+        Err("Save cancelled".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn get_idle_monitoring(
+    state: tauri::State<'_, Arc<Mutex<TrackerState>>>,
+) -> Result<bool, String> {
+    let tracker = state.lock().await;
+    Ok(tracker.is_idle_monitoring)
+}
+
+#[tauri::command]
+pub async fn set_idle_monitoring(
+    state: tauri::State<'_, Arc<Mutex<TrackerState>>>,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut tracker = state.lock().await;
+    tracker.is_idle_monitoring = enabled;
+    
+    sqlx::query(
+        "INSERT INTO settings (key, value) VALUES ('idle_monitoring', ?)
+         ON CONFLICT(key) DO UPDATE SET value = ?"
+    )
+    .bind(if enabled { "true" } else { "false" })
+    .bind(if enabled { "true" } else { "false" })
+    .execute(&tracker.db_pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+
+

@@ -222,11 +222,6 @@ body {
   transition: var(--transition-system);
 }
 
-.store-utility-card:hover {
-  border-color: var(--colors-ink-muted-48);
-  transform: translateY(-1px);
-}
-
 .card-header {
   display: flex;
   justify-content: space-between;

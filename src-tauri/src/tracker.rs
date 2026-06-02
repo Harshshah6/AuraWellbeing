@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use chrono::{Local, DateTime};
-use sqlx::SqlitePool;
+use sqlx::{SqlitePool, Row};
 use tokio::sync::Mutex;
 use crate::idle::is_user_idle;
 
@@ -18,17 +18,28 @@ pub struct TrackerState {
     pub current_app: Option<ActiveAppInfo>,
     pub db_pool: SqlitePool,
     pub is_tracking: bool,
+    pub is_idle_monitoring: bool,
 }
 
 impl TrackerState {
     pub fn new(db_pool: SqlitePool) -> Self {
+        let is_idle_monitoring = tauri::async_runtime::block_on(async {
+            sqlx::query("SELECT value FROM settings WHERE key = 'idle_monitoring'")
+                .fetch_one(&db_pool)
+                .await
+                .map(|r| r.try_get::<String, _>("value").unwrap_or_else(|_| "false".to_string()) == "true")
+                .unwrap_or(false)
+        });
+
         Self {
             current_app: None,
             db_pool,
             is_tracking: true,
+            is_idle_monitoring,
         }
     }
 }
+
 
 #[cfg(target_os = "windows")]
 pub fn get_active_window_info() -> Option<(String, String)> {
@@ -172,7 +183,7 @@ pub fn start_tracker_loop(state: Arc<Mutex<TrackerState>>) {
             }
 
             // check user idle status (e.g. 60 seconds threshold)
-            if is_user_idle(60) {
+            if tracker.is_idle_monitoring && is_user_idle(60) {
                 // If user becomes idle, persist whatever they were doing and clear active state
                 if let Some(active) = tracker.current_app.take() {
                     let _ = persist_activity(&tracker.db_pool, &active).await;

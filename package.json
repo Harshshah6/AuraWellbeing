@@ -13,7 +13,13 @@
     "tauri:build-win": "tauri build --bundles nsis,msi",
     "tauri:build-linux": "tauri build --bundles deb,appimage",
     "tauri:build-mac": "tauri build --bundles dmg,app",
-    "clean": "node scripts/clean.js"
+    "clean": "node scripts/clean.js",
+    "version:sync": "node scripts/sync-version.js",
+    "prebuild": "npm run version:sync",
+    "predev": "npm run version:sync",
+    "pretauri:build-win": "npm run version:sync",
+    "pretauri:build-linux": "npm run version:sync",
+    "pretauri:build-mac": "npm run version:sync"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

@@ -27,6 +27,13 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .setup(move |app| {
             // ─── Database & Tracker ───
             let app_data_dir = app.path().app_local_data_dir()
@@ -115,7 +122,10 @@ pub fn run() {
             commands::get_focus_sessions,
             commands::get_heatmap_data,
             commands::get_autostart_enabled,
-            commands::set_autostart_enabled
+            commands::set_autostart_enabled,
+            commands::export_data,
+            commands::get_idle_monitoring,
+            commands::set_idle_monitoring
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
