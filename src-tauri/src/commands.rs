@@ -421,22 +421,10 @@ fn get_exe_path() -> Option<String> {
         .and_then(|p| p.to_str().map(|s| s.to_string()))
 }
 
-#[cfg(target_os = "windows")]
-pub fn autostart_is_enabled() -> bool {
-    use std::process::Command;
-    use std::os::windows::process::CommandExt;
-    let output = Command::new("reg")
-        .args(["query", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run", "/v", AUTOSTART_REG_NAME])
-        .creation_flags(0x08000000)
-        .output();
-    match output {
-        Ok(o) => o.status.success(),
-        Err(_) => false,
-    }
-}
+
 
 #[cfg(target_os = "windows")]
-fn autostart_set(enabled: bool) -> Result<(), String> {
+pub fn autostart_set(enabled: bool) -> Result<(), String> {
     use std::process::Command;
     use std::os::windows::process::CommandExt;
     if enabled {
@@ -470,15 +458,10 @@ fn autostart_set(enabled: bool) -> Result<(), String> {
     }
 }
 
-#[cfg(target_os = "macos")]
-pub fn autostart_is_enabled() -> bool {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let plist_path = format!("{}/Library/LaunchAgents/com.aura.wellbeing.plist", home);
-    std::path::Path::new(&plist_path).exists()
-}
+
 
 #[cfg(target_os = "macos")]
-fn autostart_set(enabled: bool) -> Result<(), String> {
+pub fn autostart_set(enabled: bool) -> Result<(), String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
     let plist_path = format!("{}/Library/LaunchAgents/com.aura.wellbeing.plist", home);
 
@@ -513,15 +496,10 @@ fn autostart_set(enabled: bool) -> Result<(), String> {
     }
 }
 
-#[cfg(target_os = "linux")]
-pub fn autostart_is_enabled() -> bool {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let desktop_path = format!("{}/.config/autostart/aura-wellbeing.desktop", home);
-    std::path::Path::new(&desktop_path).exists()
-}
+
 
 #[cfg(target_os = "linux")]
-fn autostart_set(enabled: bool) -> Result<(), String> {
+pub fn autostart_set(enabled: bool) -> Result<(), String> {
     let home = std::env::var("HOME").map_err(|e| e.to_string())?;
     let autostart_dir = format!("{}/.config/autostart", home);
     let desktop_path = format!("{}/aura-wellbeing.desktop", autostart_dir);
@@ -550,9 +528,24 @@ pub async fn get_autostart_enabled() -> Result<bool, String> {
 }
 
 #[tauri::command]
-pub async fn set_autostart_enabled(enabled: bool) -> Result<(), String> {
+pub async fn set_autostart_enabled(
+    state: tauri::State<'_, Arc<Mutex<TrackerState>>>,
+    enabled: bool,
+) -> Result<(), String> {
     autostart_set(enabled)?;
     BACKGROUND_ENABLED.store(enabled, Ordering::Relaxed);
+
+    let tracker = state.lock().await;
+    sqlx::query(
+        "INSERT INTO settings (key, value) VALUES ('autostart', ?)
+         ON CONFLICT(key) DO UPDATE SET value = ?"
+    )
+    .bind(if enabled { "true" } else { "false" })
+    .bind(if enabled { "true" } else { "false" })
+    .execute(&tracker.db_pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
     Ok(())
 }
 

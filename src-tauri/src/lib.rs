@@ -21,9 +21,8 @@ fn is_background_launch() -> bool {
 pub fn run() {
     let start_hidden = is_background_launch();
 
-    // Initialize the cached background-mode state from the real autostart status.
-    // This runs once at startup so the close handler never needs to spawn a subprocess.
-    commands::BACKGROUND_ENABLED.store(commands::autostart_is_enabled(), Ordering::Relaxed);
+    // Initialize background-mode state. It will be loaded from DB in setup block.
+    commands::BACKGROUND_ENABLED.store(true, Ordering::Relaxed);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -42,6 +41,37 @@ pub fn run() {
             let pool = tauri::async_runtime::block_on(async {
                 db::init_db(app_data_dir).await.expect("Failed to initialize SQLite database")
             });
+
+            // Handle autostart by default on startup
+            let autostart_val: Option<String> = tauri::async_runtime::block_on(async {
+                let row: Option<(String,)> = sqlx::query_as("SELECT value FROM settings WHERE key = 'autostart'")
+                    .fetch_optional(&pool)
+                    .await
+                    .unwrap_or(None);
+                row.map(|r| r.0)
+            });
+
+            let autostart_enabled = match autostart_val {
+                Some(val) => val == "true",
+                None => {
+                    // First run: save setting as true in database and register in system
+                    let _ = commands::autostart_set(true);
+                    let _ = tauri::async_runtime::block_on(async {
+                        sqlx::query("INSERT INTO settings (key, value) VALUES ('autostart', 'true')")
+                            .execute(&pool)
+                            .await
+                    });
+                    true
+                }
+            };
+
+            // Sync with current status
+            if autostart_enabled {
+                let _ = commands::autostart_set(true);
+            } else {
+                let _ = commands::autostart_set(false);
+            }
+            commands::BACKGROUND_ENABLED.store(autostart_enabled, Ordering::Relaxed);
 
             let tracker_state = Arc::new(Mutex::new(TrackerState::new(pool)));
             app.manage(tracker_state.clone());
