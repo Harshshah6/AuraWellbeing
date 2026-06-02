@@ -109,10 +109,15 @@ export default function App() {
         setCategories(catRes || []);
 
         const timeRes = await invoke<any[]>("get_hourly_timeline", { dateStr: selectedDate });
-        const formattedTimeline = (timeRes || []).map(seg => ({
-          hour: `${seg.hour.toString().padStart(2, '0')}:00`,
-          Minutes: Math.round(seg.total_seconds / 60)
-        }));
+        const formattedTimeline = (timeRes || []).map(seg => {
+          const h = seg.hour;
+          const ampm = h >= 12 ? 'PM' : 'AM';
+          const displayHour = h % 12 === 0 ? 12 : h % 12;
+          return {
+            hour: `${displayHour} ${ampm}`,
+            Minutes: Math.round(seg.total_seconds / 60)
+          };
+        });
         setTimeline(formattedTimeline);
 
         const heatRes = await invoke<any[]>("get_heatmap_data");
@@ -378,7 +383,7 @@ export default function App() {
                     {graphView === 'day' ? (
                       timeline.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={timeline} margin={{ top: 0, right: 0, left: -25, bottom: 0 }}>
+                          <AreaChart data={timeline} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
                             <defs>
                               <linearGradient id="colorMinutes" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="5%" stopColor="var(--colors-primary)" stopOpacity={0.15}/>
@@ -398,7 +403,7 @@ export default function App() {
                       )
                     ) : (
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={historyGraphData} margin={{ top: 0, right: 0, left: -25, bottom: 0 }}>
+                        <BarChart data={historyGraphData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
                           <XAxis dataKey="label" stroke="var(--colors-ink-muted-48)" fontSize={10} tickLine={false} axisLine={false} />
                           <YAxis stroke="var(--colors-ink-muted-48)" fontSize={10} tickLine={false} axisLine={false} />
                           <Tooltip content={<AppleAreaTooltip />} />

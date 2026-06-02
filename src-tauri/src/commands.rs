@@ -68,7 +68,7 @@ pub async fn get_top_apps(
         "SELECT a.display_name, a.executable_name, a.category, SUM(act.duration_seconds) as total_seconds, a.productivity_score 
          FROM apps a 
          JOIN activities act ON a.id = act.app_id 
-         WHERE strftime('%Y-%m-%d', act.start_time) = ?
+         WHERE substr(act.start_time, 1, 10) = ?
          GROUP BY a.id 
          ORDER BY total_seconds DESC 
          LIMIT ?"
@@ -103,7 +103,7 @@ pub async fn get_category_distribution(
         "SELECT a.category, SUM(act.duration_seconds) as total_seconds 
          FROM apps a 
          JOIN activities act ON a.id = act.app_id 
-         WHERE strftime('%Y-%m-%d', act.start_time) = ?
+         WHERE substr(act.start_time, 1, 10) = ?
          GROUP BY a.category 
          ORDER BY total_seconds DESC"
     )
@@ -130,9 +130,9 @@ pub async fn get_hourly_timeline(
     let pool = &tracker.db_pool;
 
     let rows = sqlx::query(
-        "SELECT CAST(strftime('%H', act.start_time) AS INTEGER) as hour, SUM(act.duration_seconds) as total_seconds 
+        "SELECT CAST(substr(act.start_time, 12, 2) AS INTEGER) as hour, SUM(act.duration_seconds) as total_seconds 
          FROM activities act 
-         WHERE strftime('%Y-%m-%d', act.start_time) = ? 
+         WHERE substr(act.start_time, 1, 10) = ? 
          GROUP BY hour
          ORDER BY hour"
     )
@@ -248,7 +248,7 @@ pub async fn get_goals(
                 "SELECT SUM(act.duration_seconds) as total 
                  FROM activities act 
                  JOIN apps a ON act.app_id = a.id 
-                 WHERE a.executable_name = ? AND strftime('%Y-%m-%d', act.start_time) = ?"
+                 WHERE a.executable_name = ? AND substr(act.start_time, 1, 10) = ?"
             )
             .bind(exe)
             .bind(&date_str)
@@ -263,7 +263,7 @@ pub async fn get_goals(
                 "SELECT SUM(act.duration_seconds) as total 
                  FROM activities act 
                  JOIN apps a ON act.app_id = a.id 
-                 WHERE a.category = ? AND strftime('%Y-%m-%d', act.start_time) = ?"
+                 WHERE a.category = ? AND substr(act.start_time, 1, 10) = ?"
             )
             .bind(cat)
             .bind(&date_str)
@@ -381,7 +381,7 @@ pub async fn get_heatmap_data(
     let pool = &tracker.db_pool;
 
     let rows = sqlx::query(
-        "SELECT strftime('%Y-%m-%d', act.start_time) as act_date, SUM(act.duration_seconds) as total 
+        "SELECT substr(act.start_time, 1, 10) as act_date, SUM(act.duration_seconds) as total 
          FROM activities act 
          GROUP BY act_date 
          ORDER BY act_date ASC"

@@ -5,6 +5,7 @@ A premium, privacy-first, cross-platform digital wellbeing and productivity trac
 Aura Wellbeing runs completely locally to track active application usage, analyze trends, monitor focus blocks, and help you maintain a healthy digital lifestyle without compromising your privacy.
 
 ---
+<img src=".github/assets/OGAuraWellbeing.png" alt="Banner" width="100%" />
 
 ## Key Features
 
