@@ -34,8 +34,14 @@ function formatDuration(totalSeconds: number): string {
 }
 
 // Apple Tooltip design
-const AppleAreaTooltip = ({ active, payload }: any) => {
+const AppleAreaTooltip = ({ active, payload, showInHrs }: any) => {
   if (active && payload && payload.length) {
+    const value = payload[0].value;
+    let displayValue = `${value}m`;
+    if (showInHrs) {
+      const hrs = value / 60;
+      displayValue = hrs % 1 === 0 ? `${hrs}h` : `${hrs.toFixed(1)}h`;
+    }
     return (
       <div
         style={{
@@ -48,7 +54,7 @@ const AppleAreaTooltip = ({ active, payload }: any) => {
         }}
       >
         <p style={{ color: 'var(--colors-ink-muted-48)', marginBottom: '2px' }}>{payload[0].payload.hour || payload[0].payload.label}</p>
-        <p style={{ fontWeight: 600, color: 'var(--colors-primary)' }}>{payload[0].value}m active</p>
+        <p style={{ fontWeight: 600, color: 'var(--colors-primary)' }}>{displayValue} active</p>
       </div>
     );
   }
@@ -61,7 +67,7 @@ export default function App() {
     const saved = localStorage.getItem("aura-theme");
     return (saved === "dark" || saved === "light") ? saved : "light";
   });
-  
+
   // selectedDate is the active date context. todayDate holds the real system today's date.
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [todayDate, setTodayDate] = useState(() => new Date().toISOString().split("T")[0]);
@@ -79,7 +85,7 @@ export default function App() {
 
   // Autostart state
   const [autostartEnabled, setAutostartEnabled] = useState(true);
-  
+
   // Idle monitor state
   const [idleMonitoring, setIdleMonitoring] = useState(false);
 
@@ -144,10 +150,10 @@ export default function App() {
   useEffect(() => {
     invoke<boolean>("get_autostart_enabled")
       .then(setAutostartEnabled)
-      .catch(() => {});
+      .catch(() => { });
     invoke<boolean>("get_idle_monitoring")
       .then(setIdleMonitoring)
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   // Total screen time calculation
@@ -242,7 +248,7 @@ export default function App() {
       const dateStr = d.toISOString().split("T")[0];
       const match = heatmapData.find(p => p.date === dateStr);
       const mins = match ? Math.round(match.count / 60) : 0;
-      
+
       let label = "";
       if (graphView === "week") {
         label = d.toLocaleDateString(undefined, { weekday: 'short' });
@@ -306,8 +312,8 @@ export default function App() {
                   </p>
                 </div>
                 {selectedDate !== todayDate && (
-                  <button 
-                    className="button-secondary-pill" 
+                  <button
+                    className="button-secondary-pill"
                     onClick={() => setSelectedDate(todayDate)}
                     style={{ fontSize: '12px', padding: '6px 12px' }}
                   >
@@ -349,7 +355,7 @@ export default function App() {
                   <h2 className="hero-display" style={{ fontSize: '28px' }}>Interactions</h2>
                   <p className="lead-subcopy" style={{ fontSize: '15px', marginTop: '4px' }}>Screen time charts and categorical activity distributions.</p>
                 </div>
-                
+
                 {/* Switchable Graph segmented buttons */}
                 <div className="segmented-pill-container" style={{ background: 'var(--colors-canvas-parchment)' }}>
                   <button
@@ -386,8 +392,8 @@ export default function App() {
                           <AreaChart data={timeline} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
                             <defs>
                               <linearGradient id="colorMinutes" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="var(--colors-primary)" stopOpacity={0.15}/>
-                                <stop offset="95%" stopColor="var(--colors-primary)" stopOpacity={0}/>
+                                <stop offset="5%" stopColor="var(--colors-primary)" stopOpacity={0.15} />
+                                <stop offset="95%" stopColor="var(--colors-primary)" stopOpacity={0} />
                               </linearGradient>
                             </defs>
                             <XAxis dataKey="hour" stroke="var(--colors-ink-muted-48)" fontSize={10} tickLine={false} axisLine={false} />
@@ -406,11 +412,11 @@ export default function App() {
                         <BarChart data={historyGraphData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
                           <XAxis dataKey="label" stroke="var(--colors-ink-muted-48)" fontSize={10} tickLine={false} axisLine={false} />
                           <YAxis stroke="var(--colors-ink-muted-48)" fontSize={10} tickLine={false} axisLine={false} />
-                          <Tooltip content={<AppleAreaTooltip />} />
-                          <Bar 
-                            dataKey="Minutes" 
-                            fill="var(--colors-primary)" 
-                            radius={[4, 4, 0, 0]} 
+                          <Tooltip content={<AppleAreaTooltip showInHrs={true} />} />
+                          <Bar
+                            dataKey="Minutes"
+                            fill="var(--colors-primary)"
+                            radius={[4, 4, 0, 0]}
                             onClick={(data: any) => {
                               if (data && data.dateStr) {
                                 setSelectedDate(data.dateStr);
@@ -490,8 +496,8 @@ export default function App() {
                   </p>
                 </div>
                 {selectedDate !== todayDate && (
-                  <button 
-                    className="button-secondary-pill" 
+                  <button
+                    className="button-secondary-pill"
                     onClick={() => setSelectedDate(todayDate)}
                     style={{ fontSize: '12px', padding: '6px 12px' }}
                   >
@@ -574,7 +580,7 @@ export default function App() {
 
         {activeTab === "settings" && (
           <>
-            <section className="viewport-tile light">
+            <section style={{ "height": "100%" }} className="viewport-tile light">
               <div>
                 <h1 className="hero-display">System Settings</h1>
                 <p className="lead-subcopy" style={{ marginTop: '8px' }}>Configure launch habits and database operations.</p>
@@ -601,11 +607,11 @@ export default function App() {
                     <h4 style={{ fontSize: '14px', fontWeight: 600 }}>Idle Monitor Tracking</h4>
                     <p className="lead-subcopy" style={{ fontSize: '12px', marginTop: '2px', color: 'var(--colors-ink-muted-48)' }}>Pause telemetry automatically after 60 seconds of mouse/keyboard inactivity.</p>
                   </div>
-                  <input 
-                    type="checkbox" 
-                    checked={idleMonitoring} 
-                    onChange={(e) => toggleIdleMonitoring(e.target.checked)} 
-                    style={{ width: '16px', height: '16px', accentColor: 'var(--colors-primary)', cursor: 'pointer' }} 
+                  <input
+                    type="checkbox"
+                    checked={idleMonitoring}
+                    onChange={(e) => toggleIdleMonitoring(e.target.checked)}
+                    style={{ width: '16px', height: '16px', accentColor: 'var(--colors-primary)', cursor: 'pointer' }}
                   />
                 </div>
 
@@ -627,14 +633,14 @@ export default function App() {
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button className="button-secondary-pill" onClick={() => openUrl("https://github.com/Harshshah6/AuraWellbeing")} style={{ padding: '6px 12px', fontSize: '11px' }}>GitHub URL</button>
-                    <button className="button-secondary-pill" onClick={() => openUrl("https://github.com/Harshshah6/AuraWellbeing")} style={{ padding: '6px 12px', fontSize: '11px' }}>Website URL</button>
+                    {/* <button className="button-secondary-pill" onClick={() => openUrl("https://github.com/Harshshah6/AuraWellbeing")} style={{ padding: '6px 12px', fontSize: '11px' }}>Website URL</button> */}
                   </div>
                 </div>
 
                 <div>
                   <h4 style={{ fontSize: '13px', fontWeight: 600, color: 'var(--colors-ink-muted-48)', textTransform: 'uppercase', marginBottom: '8px' }}>Specification</h4>
                   <p className="lead-subcopy" style={{ fontSize: '12.5px', color: 'var(--colors-ink-muted-80)' }}>
-                    Aura Wellbeing • Version {version} • Native Desktop (Tauri v2 + Rust SQLite Core)
+                    Aura Wellbeing • <a target="_blank" href="https://github.com/Harshshah6/AuraWellbeing/releases/latest" style={{ color: 'var(--colors-ink-muted-80)' }}>Version {version}</a>
                   </p>
                 </div>
               </div>
@@ -643,6 +649,6 @@ export default function App() {
         )}
 
       </div>
-    </div>
+    </div >
   );
 }
