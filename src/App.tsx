@@ -72,14 +72,16 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [todayDate, setTodayDate] = useState(() => new Date().toISOString().split("T")[0]);
 
-  // Switchable graph state: "day" (hourly Area), "week" (daily Bar last 7 days), "month" (daily Bar last 30 days)
-  const [graphView, setGraphView] = useState<"day" | "week" | "month">("day");
+  // Switchable graph state: "day" (hourly Area), "week" (daily Bar last 7 days), "month" (daily Bar last 30 days), "year" (monthly Bar last 12 months)
+  const [graphView, setGraphView] = useState<"day" | "week" | "month" | "year">("day");
 
   // Telemetry state
   const [topApps, setTopApps] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [timeline, setTimeline] = useState<any[]>([]);
   const [heatmapData, setHeatmapData] = useState<any[]>([]);
+  const [yearlyData, setYearlyData] = useState<any[]>([]);
+  const [avgStats, setAvgStats] = useState<any>(null);
 
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -128,6 +130,14 @@ export default function App() {
 
         const heatRes = await invoke<any[]>("get_heatmap_data");
         setHeatmapData(heatRes || []);
+
+        // Yearly data
+        const yearRes = await invoke<any[]>("get_yearly_data", { dateStr: selectedDate });
+        setYearlyData(yearRes || []);
+
+        // Avg screen time stats
+        const avgRes = await invoke<any>("get_avg_screen_time");
+        setAvgStats(avgRes || null);
       } catch (err) {
         console.error("Error loading telemetry:", err);
       }
@@ -264,6 +274,15 @@ export default function App() {
     return data;
   }, [selectedDate, heatmapData, graphView]);
 
+  // Yearly graph data: map yearlyData to chart-friendly format (hours)
+  const yearlyGraphData = useMemo(() => {
+    return yearlyData.map(d => ({
+      label: d.month_label,
+      month: d.month,
+      Hours: parseFloat((d.total_minutes / 60).toFixed(1)),
+    }));
+  }, [yearlyData]);
+
   // Helper to format selected date nicely
   const formattedSelectedDate = useMemo(() => {
     const d = new Date(selectedDate);
@@ -332,7 +351,7 @@ export default function App() {
                     </div>
                     <Clock size={18} color="var(--colors-primary)" />
                   </div>
-                  <span style={{ fontSize: '13px', color: 'var(--colors-ink-muted-48)' }}>Total Active Duration</span>
+                  <span style={{ fontSize: '13px', color: 'var(--colors-ink-muted-48)' }}>Today's Active Duration</span>
                 </div>
 
                 <div className="store-utility-card">
@@ -376,6 +395,12 @@ export default function App() {
                   >
                     Monthly
                   </button>
+                  <button
+                    className={`segmented-pill-button ${graphView === 'year' ? 'active' : ''}`}
+                    onClick={() => setGraphView('year')}
+                  >
+                    Yearly
+                  </button>
                 </div>
               </div>
 
@@ -383,7 +408,10 @@ export default function App() {
                 {/* Switchable history chart */}
                 <div className="store-utility-card">
                   <span className="card-subtitle" style={{ marginBottom: '16px', display: 'block', textTransform: 'uppercase' }}>
-                    {graphView === 'day' ? 'HOURLY ACTIVITY (MINUTES)' : graphView === 'week' ? 'DAILY ACTIVITY - LAST 7 DAYS (MINUTES)' : 'DAILY ACTIVITY - LAST 30 DAYS (MINUTES)'}
+                    {graphView === 'day' ? 'HOURLY ACTIVITY (MINUTES)'
+                      : graphView === 'week' ? 'DAILY ACTIVITY — LAST 7 DAYS'
+                      : graphView === 'month' ? 'DAILY ACTIVITY — LAST 30 DAYS'
+                      : 'MONTHLY ACTIVITY — LAST 12 MONTHS (HOURS)'}
                   </span>
                   <div style={{ width: '100%', height: '240px' }}>
                     {graphView === 'day' ? (
@@ -407,6 +435,33 @@ export default function App() {
                           No tracking metrics captured for this day.
                         </div>
                       )
+                    ) : graphView === 'year' ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={yearlyGraphData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                          <XAxis dataKey="label" stroke="var(--colors-ink-muted-48)" fontSize={10} tickLine={false} axisLine={false} />
+                          <YAxis stroke="var(--colors-ink-muted-48)" fontSize={10} tickLine={false} axisLine={false} />
+                          <Tooltip
+                            content={({ active, payload }: any) => {
+                              if (active && payload && payload.length) {
+                                const v = payload[0].value;
+                                return (
+                                  <div style={{ padding: '8px 12px', borderRadius: '8px', fontSize: '12px', border: '1px solid var(--colors-hairline)', background: 'var(--colors-canvas)', boxShadow: '0 4px 12px rgba(0,0,0,0.06)' }}>
+                                    <p style={{ color: 'var(--colors-ink-muted-48)', marginBottom: '2px' }}>{payload[0].payload.label}</p>
+                                    <p style={{ fontWeight: 600, color: 'var(--colors-primary)' }}>{v}h active</p>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            }}
+                          />
+                          <Bar
+                            dataKey="Hours"
+                            fill="var(--colors-primary)"
+                            radius={[4, 4, 0, 0]}
+                            opacity={0.85}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
                     ) : (
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={historyGraphData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
@@ -535,7 +590,69 @@ export default function App() {
               </div>
             </section>
 
-            {/* Tile 2: Simplified app table */}
+            {/* Tile 2: Avg Screen Time Stats */}
+            <section className="viewport-tile parchment">
+              <div>
+                <h2 className="hero-display" style={{ fontSize: '28px' }}>Screen Time Averages</h2>
+                <p className="lead-subcopy" style={{ fontSize: '15px', marginTop: '4px' }}>Average screen time computed across all {avgStats?.tracked_days ?? 0} tracked days.</p>
+              </div>
+
+              <div className="store-grid-container" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+                <div className="store-utility-card">
+                  <div className="card-header">
+                    <div>
+                      <span className="card-subtitle">DAILY AVG</span>
+                      <h3 className="card-title" style={{ fontSize: '24px', marginTop: '6px' }}>
+                        {avgStats ? formatDuration(avgStats.daily_avg_seconds) : '—'}
+                      </h3>
+                    </div>
+                    <Clock size={18} color="var(--colors-primary)" />
+                  </div>
+                  <span style={{ fontSize: '13px', color: 'var(--colors-ink-muted-48)' }}>Average per tracked day</span>
+                </div>
+
+                <div className="store-utility-card">
+                  <div className="card-header">
+                    <div>
+                      <span className="card-subtitle">WEEKLY AVG</span>
+                      <h3 className="card-title" style={{ fontSize: '24px', marginTop: '6px' }}>
+                        {avgStats ? formatDuration(avgStats.weekly_avg_seconds) : '—'}
+                      </h3>
+                    </div>
+                    <Activity size={18} color="var(--colors-primary)" />
+                  </div>
+                  <span style={{ fontSize: '13px', color: 'var(--colors-ink-muted-48)' }}>Average per week</span>
+                </div>
+
+                <div className="store-utility-card">
+                  <div className="card-header">
+                    <div>
+                      <span className="card-subtitle">MONTHLY AVG</span>
+                      <h3 className="card-title" style={{ fontSize: '24px', marginTop: '6px' }}>
+                        {avgStats ? formatDuration(avgStats.monthly_avg_seconds) : '—'}
+                      </h3>
+                    </div>
+                    <Clock size={18} color="var(--colors-primary)" />
+                  </div>
+                  <span style={{ fontSize: '13px', color: 'var(--colors-ink-muted-48)' }}>Average per month</span>
+                </div>
+
+                <div className="store-utility-card">
+                  <div className="card-header">
+                    <div>
+                      <span className="card-subtitle">YEARLY AVG</span>
+                      <h3 className="card-title" style={{ fontSize: '24px', marginTop: '6px' }}>
+                        {avgStats ? formatDuration(avgStats.yearly_avg_seconds) : '—'}
+                      </h3>
+                    </div>
+                    <Activity size={18} color="var(--colors-primary)" />
+                  </div>
+                  <span style={{ fontSize: '13px', color: 'var(--colors-ink-muted-48)' }}>Average per year</span>
+                </div>
+              </div>
+            </section>
+
+            {/* Tile 3: Simplified app table */}
             <section className="viewport-tile parchment">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '16px' }}>
                 <div>
@@ -628,12 +745,55 @@ export default function App() {
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--colors-divider-soft)', paddingBottom: '20px' }}>
                   <div>
+                    <h4 style={{ fontSize: '14px', fontWeight: 600 }}>Database Backup &amp; Restore</h4>
+                    <p className="lead-subcopy" style={{ fontSize: '12px', marginTop: '2px', color: 'var(--colors-ink-muted-48)' }}>Save a copy of your database or restore from a previous backup. Restore will restart the app.</p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      className="button-secondary-pill"
+                      style={{ padding: '6px 12px', fontSize: '11px' }}
+                      onClick={async () => {
+                        try {
+                          const path = await invoke<string>("backup_database");
+                          alert(`Database backed up successfully to:\n${path}`);
+                        } catch (err: any) {
+                          if (err !== 'Backup cancelled') {
+                            alert(`Backup failed: ${err}`);
+                          }
+                        }
+                      }}
+                    >
+                      Backup DB
+                    </button>
+                    <button
+                      className="button-secondary-pill"
+                      style={{ padding: '6px 12px', fontSize: '11px', color: 'var(--colors-danger, #e05c5c)' }}
+                      onClick={async () => {
+                        const confirmed = window.confirm(
+                          'Restoring a backup will REPLACE all current data and restart the app.\n\nAre you sure you want to continue?'
+                        );
+                        if (!confirmed) return;
+                        try {
+                          await invoke("restore_database");
+                        } catch (err: any) {
+                          if (err !== 'Restore cancelled') {
+                            alert(`Restore failed: ${err}`);
+                          }
+                        }
+                      }}
+                    >
+                      Restore DB
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--colors-divider-soft)', paddingBottom: '20px' }}>
+                  <div>
                     <h4 style={{ fontSize: '14px', fontWeight: 600 }}>Project Resources</h4>
                     <p className="lead-subcopy" style={{ fontSize: '12px', marginTop: '2px', color: 'var(--colors-ink-muted-48)' }}>Access the open-source code and official website details.</p>
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button className="button-secondary-pill" onClick={() => openUrl("https://github.com/Harshshah6/AuraWellbeing")} style={{ padding: '6px 12px', fontSize: '11px' }}>GitHub URL</button>
-                    {/* <button className="button-secondary-pill" onClick={() => openUrl("https://github.com/Harshshah6/AuraWellbeing")} style={{ padding: '6px 12px', fontSize: '11px' }}>Website URL</button> */}
                   </div>
                 </div>
 

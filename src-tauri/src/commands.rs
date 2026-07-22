@@ -4,6 +4,7 @@ use sqlx::Row;
 use tokio::sync::Mutex;
 use chrono::Local;
 use crate::tracker::TrackerState;
+use tauri::{AppHandle, Manager};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct AppUsage {
@@ -30,6 +31,22 @@ pub struct TimelineSegment {
 pub struct HeatmapDataPoint {
     pub date: String,
     pub count: i64, // total seconds tracked
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct YearlyDataPoint {
+    pub month: String,       // "YYYY-MM"
+    pub month_label: String, // "Jan", "Feb", ...
+    pub total_minutes: i64,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AvgScreenTimeStats {
+    pub daily_avg_seconds: i64,
+    pub weekly_avg_seconds: i64,
+    pub monthly_avg_seconds: i64,
+    pub yearly_avg_seconds: i64,
+    pub tracked_days: i64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -592,5 +609,209 @@ pub async fn set_idle_monitoring(
     Ok(())
 }
 
+// 9. Get Yearly Data (monthly aggregated for past 12 months)
+#[tauri::command]
+pub async fn get_yearly_data(
+    state: tauri::State<'_, Arc<Mutex<TrackerState>>>,
+    date_str: String,
+) -> Result<Vec<YearlyDataPoint>, String> {
+    use chrono::Datelike;
 
+    let tracker = state.lock().await;
+    let pool = &tracker.db_pool;
 
+    let base = chrono::NaiveDate::parse_from_str(&date_str, "%Y-%m-%d")
+        .map_err(|e| e.to_string())?;
+
+    let rows = sqlx::query(
+        "SELECT substr(act.start_time, 1, 7) as month, SUM(act.duration_seconds) as total \
+         FROM activities act \
+         GROUP BY month \
+         ORDER BY month ASC"
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut lookup = std::collections::HashMap::<String, i64>::new();
+    for r in rows {
+        let m: String = r.get("month");
+        let t: i64 = r.get("total");
+        lookup.insert(m, t);
+    }
+
+    let month_names = ["Jan","Feb","Mar","Apr","May","Jun",
+                       "Jul","Aug","Sep","Oct","Nov","Dec"];
+
+    let mut result = Vec::new();
+    let base_year = base.year();
+    let base_month = base.month() as i32; // 1..=12
+
+    for i in (0i32..12).rev() {
+        // offset from month 0 (Jan of base_year): base_month-1 - i
+        let raw = base_month - 1 - i;
+        let (y, m) = if raw >= 0 {
+            (base_year, raw % 12 + 1)
+        } else {
+            let years_back = ((-raw - 1) / 12) + 1;
+            let adj = raw + years_back * 12;
+            (base_year - years_back, adj + 1)
+        };
+        let month_str = format!("{:04}-{:02}", y, m);
+        let label = month_names[(m - 1) as usize].to_string();
+        let total_secs = lookup.get(&month_str).copied().unwrap_or(0);
+        result.push(YearlyDataPoint {
+            month: month_str,
+            month_label: label,
+            total_minutes: total_secs / 60,
+        });
+    }
+
+    Ok(result)
+}
+
+// 10. Get Average Screen Time Stats
+#[tauri::command]
+pub async fn get_avg_screen_time(
+    state: tauri::State<'_, Arc<Mutex<TrackerState>>>,
+) -> Result<AvgScreenTimeStats, String> {
+    use chrono::Datelike;
+
+    let tracker = state.lock().await;
+    let pool = &tracker.db_pool;
+
+    let day_rows = sqlx::query(
+        "SELECT substr(start_time, 1, 10) as day, SUM(duration_seconds) as total \
+         FROM activities \
+         GROUP BY day"
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if day_rows.is_empty() {
+        return Ok(AvgScreenTimeStats {
+            daily_avg_seconds: 0,
+            weekly_avg_seconds: 0,
+            monthly_avg_seconds: 0,
+            yearly_avg_seconds: 0,
+            tracked_days: 0,
+        });
+    }
+
+    let mut day_totals: Vec<(String, i64)> = day_rows.iter().map(|r| {
+        let day: String = r.get("day");
+        let total: i64 = r.get("total");
+        (day, total)
+    }).collect();
+    day_totals.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let tracked_days = day_totals.len() as i64;
+    let total_all: i64 = day_totals.iter().map(|(_, s)| s).sum();
+    let daily_avg_seconds = total_all / tracked_days;
+
+    // Weekly avg
+    let mut week_map = std::collections::HashMap::<String, i64>::new();
+    for (day_str, secs) in &day_totals {
+        if let Ok(date) = chrono::NaiveDate::parse_from_str(day_str, "%Y-%m-%d") {
+            let iso = date.iso_week();
+            let key = format!("{:04}-W{:02}", iso.year(), iso.week());
+            *week_map.entry(key).or_insert(0) += secs;
+        }
+    }
+    let num_weeks = week_map.len().max(1) as i64;
+    let weekly_avg_seconds: i64 = week_map.values().sum::<i64>() / num_weeks;
+
+    // Monthly avg
+    let mut month_map = std::collections::HashMap::<String, i64>::new();
+    for (day_str, secs) in &day_totals {
+        if day_str.len() >= 7 {
+            let key = day_str[..7].to_string();
+            *month_map.entry(key).or_insert(0) += secs;
+        }
+    }
+    let num_months = month_map.len().max(1) as i64;
+    let monthly_avg_seconds: i64 = month_map.values().sum::<i64>() / num_months;
+
+    // Yearly avg
+    let mut year_map = std::collections::HashMap::<String, i64>::new();
+    for (day_str, secs) in &day_totals {
+        if day_str.len() >= 4 {
+            let key = day_str[..4].to_string();
+            *year_map.entry(key).or_insert(0) += secs;
+        }
+    }
+    let num_years = year_map.len().max(1) as i64;
+    let yearly_avg_seconds: i64 = year_map.values().sum::<i64>() / num_years;
+
+    Ok(AvgScreenTimeStats {
+        daily_avg_seconds,
+        weekly_avg_seconds,
+        monthly_avg_seconds,
+        yearly_avg_seconds,
+        tracked_days,
+    })
+}
+
+// 11. Backup Database using VACUUM INTO (safe online backup)
+#[tauri::command]
+pub async fn backup_database(
+    state: tauri::State<'_, Arc<Mutex<TrackerState>>>,
+    _app: AppHandle,
+) -> Result<String, String> {
+    let file_path = rfd::FileDialog::new()
+        .set_file_name("wellbeing_backup.db")
+        .add_filter("SQLite Database", &["db"])
+        .save_file();
+
+    let dest = match file_path {
+        Some(p) => p,
+        None => return Err("Backup cancelled".to_string()),
+    };
+
+    let dest_str = dest.to_string_lossy().to_string();
+    // Escape single quotes in path for SQLite
+    let safe_dest = dest_str.replace('\'', "''");
+
+    let tracker = state.lock().await;
+    let pool = &tracker.db_pool;
+    let query = format!("VACUUM INTO '{}'", safe_dest);
+    sqlx::query(&query)
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(dest_str)
+}
+
+// 12. Restore Database (validate, copy, restart)
+#[tauri::command]
+pub async fn restore_database(
+    app: AppHandle,
+) -> Result<(), String> {
+    let file_path = rfd::FileDialog::new()
+        .add_filter("SQLite Database", &["db"])
+        .pick_file();
+
+    let src = match file_path {
+        Some(p) => p,
+        None => return Err("Restore cancelled".to_string()),
+    };
+
+    // Validate SQLite magic header
+    let header = std::fs::read(&src).map_err(|e| e.to_string())?;
+    let magic = b"SQLite format 3\0";
+    if header.len() < 16 || &header[..16] != magic {
+        return Err("Invalid SQLite database file. Please select a valid .db backup.".to_string());
+    }
+
+    // Resolve destination path
+    let app_data_dir = app.path().app_local_data_dir()
+        .map_err(|e| e.to_string())?;
+    let dest = app_data_dir.join("wellbeing.db");
+
+    std::fs::copy(&src, &dest).map_err(|e| e.to_string())?;
+
+    // Restart to reload with restored database
+    app.restart();
+}

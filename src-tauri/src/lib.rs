@@ -155,7 +155,11 @@ pub fn run() {
             commands::set_autostart_enabled,
             commands::export_data,
             commands::get_idle_monitoring,
-            commands::set_idle_monitoring
+            commands::set_idle_monitoring,
+            commands::get_yearly_data,
+            commands::get_avg_screen_time,
+            commands::backup_database,
+            commands::restore_database
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
