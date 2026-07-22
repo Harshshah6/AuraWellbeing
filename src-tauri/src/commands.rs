@@ -427,11 +427,15 @@ pub static BACKGROUND_ENABLED: AtomicBool = AtomicBool::new(true);
 
 /// Debug builds use a separate registry key / plist / desktop file
 /// so that dev and production don't overwrite each other.
+#[cfg(target_os = "windows")]
 #[cfg(debug_assertions)]
 const AUTOSTART_REG_NAME: &str = "AuraWellbeing-Dev";
+
+#[cfg(target_os = "windows")]
 #[cfg(not(debug_assertions))]
 const AUTOSTART_REG_NAME: &str = "AuraWellbeing";
 
+#[cfg(target_os = "windows")]
 fn get_exe_path() -> Option<String> {
     std::env::current_exe()
         .ok()
@@ -526,7 +530,7 @@ pub fn autostart_set(enabled: bool) -> Result<(), String> {
         let exe_str = exe.to_str().ok_or("Invalid exe path")?;
         std::fs::create_dir_all(&autostart_dir).map_err(|e| e.to_string())?;
         let content = format!(
-            "[Desktop Entry]\nType=Application\nName=Aura Wellbeing\nExec={} --background\nX-GNOME-Autostart-enabled=true\n",
+            "[Desktop Entry]\nType=Application\nName=Aura Wellbeing\nExec=\"{}\" --background\nX-GNOME-Autostart-enabled=true\n",
             exe_str
         );
         std::fs::write(&desktop_path, content).map_err(|e| e.to_string())?;

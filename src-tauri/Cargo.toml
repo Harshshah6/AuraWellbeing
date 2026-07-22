@@ -1,6 +1,6 @@
 [package]
 name = "aura-wellbeing"
-version = "1.0.2"
+version = "1.0.3"
 description = "Aura Wellbeing — Digital Wellbeing Desktop Application"
 authors = ["Harshshah6"]
 edition = "2021"
