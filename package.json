@@ -14,6 +14,7 @@
     "tauri:build-linux": "tauri build --bundles deb,appimage",
     "tauri:build-mac": "tauri build --bundles dmg,app",
     "clean": "node scripts/clean.js",
+    "seed": "node scripts/seed-data.js",
     "version:sync": "node scripts/sync-version.js",
     "prebuild": "npm run version:sync",
     "predev": "npm run version:sync",
